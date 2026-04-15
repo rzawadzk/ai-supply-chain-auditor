@@ -51,6 +51,12 @@ def main():
         action="store_true",
         help="Stream the agent's thinking and tool calls",
     )
+    parser.add_argument(
+        "--db",
+        default=os.environ.get("AUDITOR_DB"),
+        help="Persist tool invocations to this SQLite DB for later diffing "
+             "(see findings_cli.py). Set AUDITOR_DB to make it the default.",
+    )
     args = parser.parse_args()
 
     # Default to the sample project
@@ -68,7 +74,12 @@ def main():
     print(f"  Mode:     {'verbose' if args.verbose else 'standard'}\n")
 
     try:
-        report = run_audit(project_path, verbose=args.verbose, backend=args.backend)
+        report = run_audit(
+            project_path,
+            verbose=args.verbose,
+            backend=args.backend,
+            db_path=args.db,
+        )
     except RuntimeError as e:
         # Surface adapter errors (missing API keys, max-turns, etc.) cleanly.
         print(f"\nError: {e}", file=sys.stderr)

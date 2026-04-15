@@ -76,10 +76,20 @@ TOGETHER_API_KEY=... python main.py --backend together
 
 # OpenRouter — unified access to many models (needs OPENROUTER_API_KEY)
 OPENROUTER_API_KEY=... python main.py --backend openrouter
+
+# Ollama — fully local, fully private. Requires `ollama serve` running.
+ollama pull llama3.1
+python main.py --backend ollama
 ```
 
 Override the default model per backend with `OPENAI_MODEL=...`. Point at a
 custom OpenAI-compatible endpoint (e.g., local vLLM) with `OPENAI_BASE_URL=...`.
+
+**Note on Ollama and open models:** tool-use quality varies sharply by
+model. Llama 3.1/3.2/3.3, Qwen 2.5, and Mistral-Nemo work reliably;
+smaller models often can't complete a full audit loop. The adapter
+health-checks the Ollama server and verifies the requested model is
+pulled before starting, and warns on models not known to support tools.
 
 ---
 
@@ -117,6 +127,35 @@ Then in any Claude Code session:
 > Audit the AI supply chain of this repo. Start with inventory and drill into anything CRITICAL.
 
 Five tools become available: `scan_inventory`, `check_provenance`, `verify_integrity`, `audit_compliance`, `probe_behavior`. The calling session orchestrates them.
+
+### Track audits over time
+
+Pass `--db` to persist every tool invocation to a SQLite database. Then use
+`findings_cli.py` to compare runs — useful for catching when a new
+dependency or code change introduces a risk.
+
+```bash
+# First audit — records into audits.db
+python main.py --db audits.db
+
+# Later (after code changes) — records a new audit
+python main.py --db audits.db
+
+# See all recorded audits
+python findings_cli.py list
+
+# Compare two audits
+python findings_cli.py diff 1 2
+
+# Inspect one audit in detail
+python findings_cli.py show 2 --full
+```
+
+What gets stored: the structured JSON output of each tool (inventory,
+provenance, integrity, compliance, behavior). What does **not** get
+stored: the LLM's prose report — it's non-deterministic and unsafe to
+diff. The CLI compares tool outputs by hash and summarizes structural
+changes (added/removed findings, list length deltas).
 
 ### 3. Direct Python (no LLM)
 
@@ -217,11 +256,11 @@ Design principle: **you write the tools; the agent writes the strategy.** Tools 
 
 PRs welcome. Things worth adding:
 
-- Ollama / local-model adapter (with capability gating for tool use)
-- Persistent findings DB with history tracking
 - SARIF output for GitHub code scanning
 - Integration with SBOM formats (CycloneDX, SPDX)
+- CI workflow that fails on CRITICAL findings
 - More language support (Rust, Go, Java ML frameworks)
+- Richer diffs in `findings_cli.py` (e.g., which specific finding appeared)
 
 If you're learning agentic AI patterns while reading this code, start with [`CLAUDE.md`](CLAUDE.md) — it's written as a teaching artifact.
 

@@ -74,6 +74,12 @@ PRESETS: dict[str, dict] = {
         "default_model": "anthropic/claude-3.5-sonnet",
         "api_key_env": "OPENROUTER_API_KEY",
     },
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "default_model": "llama3.1",
+        # None = no API key required; see __init__ for handling
+        "api_key_env": None,
+    },
 }
 
 
@@ -90,15 +96,24 @@ class OpenAICompatAdapter:
 
         # Env vars always win over presets — lets a user point `--backend openai`
         # at a local vLLM server by just setting OPENAI_BASE_URL.
-        self.api_key = os.environ.get(preset["api_key_env"]) or os.environ.get("OPENAI_API_KEY")
         self.base_url = os.environ.get("OPENAI_BASE_URL") or preset["base_url"]
         self.model = os.environ.get("OPENAI_MODEL") or preset["default_model"]
 
-        if not self.api_key:
-            raise RuntimeError(
-                f"Missing API key. Set {preset['api_key_env']} "
-                f"(or OPENAI_API_KEY) in your environment."
+        # api_key_env=None means the provider doesn't require a key (Ollama,
+        # local vLLM, LM Studio). OpenAI's client still expects a non-empty
+        # string, so we pass a sentinel.
+        if preset["api_key_env"] is None:
+            self.api_key = "not-needed"
+        else:
+            self.api_key = (
+                os.environ.get(preset["api_key_env"])
+                or os.environ.get("OPENAI_API_KEY")
             )
+            if not self.api_key:
+                raise RuntimeError(
+                    f"Missing API key. Set {preset['api_key_env']} "
+                    f"(or OPENAI_API_KEY) in your environment."
+                )
 
     async def run_audit(
         self,

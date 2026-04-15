@@ -21,14 +21,17 @@ I am learning agentic AI. When helping with this project:
 ## Architecture
 
 ```
-main.py              → CLI entry point (--backend flag picks adapter)
-agent.py             → Dispatcher (picks adapter, delegates audit)
+main.py              → CLI entry point (--backend, --db flags)
+agent.py             → Dispatcher (picks adapter, optionally wraps runners with DB logging)
 mcp_server.py        → STANDALONE MCP server (exposes 5 tools to any CC session)
 .mcp.json            → Claude Code config to register the standalone server
+findings_db.py       → SQLite persistence for audit history + tool invocations
+findings_cli.py      → CLI: list / show / diff recorded audits
 adapters/            → Model-agnostic layer
     base.py          → AgentAdapter Protocol + SYSTEM_PROMPT (shared across backends)
     claude_sdk.py    → Claude Agent SDK adapter (default, uses CC login)
     openai_compat.py → OpenAI/Groq/Together/OpenRouter adapter (one class, presets)
+    ollama.py        → Local-model adapter (subclass; health check + capability warning)
     __init__.py      → get_adapter() registry with lazy imports
 tools/               → The 5 audit dimensions (one file per tool)
     __init__.py      → Tool registry (ALL_TOOLS, TOOL_RUNNERS)
@@ -57,6 +60,25 @@ Adding a new backend:
 2. Register it in `adapters/__init__.py::get_adapter()`
 3. Add the name to `AVAILABLE_BACKENDS`
 No other file needs to change.
+
+## Persistence layer (findings DB)
+
+What's stored: raw tool invocations (name, args, JSON result, SHA256 of
+canonicalized result) per audit run. NOT stored: the LLM's prose report
+— non-deterministic, unsafe to diff.
+
+How it plugs in: when `--db PATH` is passed, `agent.py` wraps each tool
+runner with a logging decorator before handing the registry to the
+adapter. Adapters stay oblivious. This is the "decorate the tool, not
+the framework" pattern — extend by wrapping rather than by modifying.
+
+Diffing: `findings_cli.py diff <old_id> <new_id>` compares tools by
+hash of their canonicalized output. Changes are summarized structurally
+(added/removed/changed keys, list length deltas). No LLM in the diff.
+
+Principle: "structured artifacts are diffable; prose is not." If you
+want finding-level diffs, extract them from the stored JSON at query
+time — don't try to normalize LLM prose.
 
 ## Two ways to use this auditor
 

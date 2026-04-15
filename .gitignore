@@ -24,3 +24,8 @@ env/
 
 # Sample project artifacts regenerated on run
 sample_project/model.pt
+
+# Local audit history — project-specific; commit intentionally if desired
+*.db
+*.sqlite
+*.sqlite3
