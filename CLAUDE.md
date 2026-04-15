@@ -21,10 +21,15 @@ I am learning agentic AI. When helping with this project:
 ## Architecture
 
 ```
-main.py              → CLI entry point (runs the full agentic audit)
-agent.py             → THE AGENTIC LOOP (Claude Agent SDK, in-process MCP)
+main.py              → CLI entry point (--backend flag picks adapter)
+agent.py             → Dispatcher (picks adapter, delegates audit)
 mcp_server.py        → STANDALONE MCP server (exposes 5 tools to any CC session)
 .mcp.json            → Claude Code config to register the standalone server
+adapters/            → Model-agnostic layer
+    base.py          → AgentAdapter Protocol + SYSTEM_PROMPT (shared across backends)
+    claude_sdk.py    → Claude Agent SDK adapter (default, uses CC login)
+    openai_compat.py → OpenAI/Groq/Together/OpenRouter adapter (one class, presets)
+    __init__.py      → get_adapter() registry with lazy imports
 tools/               → The 5 audit dimensions (one file per tool)
     __init__.py      → Tool registry (ALL_TOOLS, TOOL_RUNNERS)
     inventory.py     → Scans for AI components
@@ -34,6 +39,24 @@ tools/               → The 5 audit dimensions (one file per tool)
     behavior.py      → Pattern-matches risky code
 sample_project/      → Intentionally vulnerable demo project
 ```
+
+## Adapter contract (the model-agnostic seam)
+
+Every backend implements `AgentAdapter` (one method: `run_audit`). The seam
+is WHOLE-LOOP, not per-call, because the agentic loop itself differs between
+providers (SDK-managed for Claude, explicit `while` for OpenAI-compatible).
+Abstracting at the single-call layer would leak provider differences into
+every caller.
+
+Shared across all adapters: `SYSTEM_PROMPT`, `build_user_prompt()`,
+`tool_schemas` (Claude JSON Schema format), `tool_runners` (Python callables).
+Adapters translate the schema to their native format on the way in.
+
+Adding a new backend:
+1. Write a class with `name: str` and `async def run_audit(...) -> str`
+2. Register it in `adapters/__init__.py::get_adapter()`
+3. Add the name to `AVAILABLE_BACKENDS`
+No other file needs to change.
 
 ## Two ways to use this auditor
 

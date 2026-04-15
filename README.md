@@ -57,6 +57,30 @@ Add `--verbose` to watch the agent reason, pick tools, and iterate:
 python main.py /path/to/your/project --verbose
 ```
 
+### Use a different LLM
+
+The auditor is model-agnostic. Pick any supported backend with `--backend`:
+
+```bash
+# Claude (default, uses Claude Code login — no API key needed)
+python main.py --backend claude
+
+# OpenAI (needs OPENAI_API_KEY)
+OPENAI_API_KEY=sk-... python main.py --backend openai
+
+# Groq — fast, Llama 3.3 70B by default (needs GROQ_API_KEY)
+GROQ_API_KEY=gsk_... python main.py --backend groq
+
+# Together AI (needs TOGETHER_API_KEY)
+TOGETHER_API_KEY=... python main.py --backend together
+
+# OpenRouter — unified access to many models (needs OPENROUTER_API_KEY)
+OPENROUTER_API_KEY=... python main.py --backend openrouter
+```
+
+Override the default model per backend with `OPENAI_MODEL=...`. Point at a
+custom OpenAI-compatible endpoint (e.g., local vLLM) with `OPENAI_BASE_URL=...`.
+
 ---
 
 ## Three ways to run it
@@ -152,9 +176,13 @@ See [`sample_project/app.py`](sample_project/app.py) for the intentionally vulne
 
 ```
 main.py              CLI entry point
-agent.py             Agentic loop (Claude Agent SDK, in-process MCP)
+agent.py             Dispatcher — picks adapter, delegates audit
 mcp_server.py        Standalone MCP server (stdio, exposes tools to any CC session)
 .mcp.json            Claude Code auto-registration
+adapters/            Model-agnostic layer
+    base.py          AgentAdapter Protocol + shared system prompt
+    claude_sdk.py    Claude adapter (SDK-managed loop)
+    openai_compat.py Unified adapter for OpenAI/Groq/Together/OpenRouter
 tools/
     inventory.py     Scan for AI components
     provenance.py    Check origins and sources
@@ -189,7 +217,7 @@ Design principle: **you write the tools; the agent writes the strategy.** Tools 
 
 PRs welcome. Things worth adding:
 
-- Model-agnostic adapter (swap Claude for OpenAI / Groq / Ollama)
+- Ollama / local-model adapter (with capability gating for tool use)
 - Persistent findings DB with history tracking
 - SARIF output for GitHub code scanning
 - Integration with SBOM formats (CycloneDX, SPDX)
