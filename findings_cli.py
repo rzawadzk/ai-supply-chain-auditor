@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-from findings_db import FindingsDB
+from findings_db import FindingsDB, SEVERITY_ORDER
 
 
 def _default_db() -> str:
@@ -80,6 +80,36 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_severity_delta(args: argparse.Namespace) -> int:
+    """Compare severity counts between two audits. Exit non-zero on regressions.
+
+    Built for CI: "did this PR introduce new CRITICALs vs the base branch?"
+    is a question you can answer without any LLM — just count severities on
+    each side and compare.
+    """
+    db = FindingsDB(args.db)
+    old = db.severity_counts(args.old_id)
+    new = db.severity_counts(args.new_id)
+
+    print(f"Severity delta: audit #{args.old_id} -> #{args.new_id}")
+    print(f"  {'LEVEL':<10} {'OLD':>5} {'NEW':>5} {'DELTA':>7}")
+    regressed: list[str] = []
+    for level in sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.get, reverse=True):
+        o, n = old[level], new[level]
+        delta = n - o
+        sign = "+" if delta > 0 else ""
+        marker = "  (regressed)" if delta > 0 and SEVERITY_ORDER[level] >= SEVERITY_ORDER[args.threshold] else ""
+        print(f"  {level:<10} {o:>5} {n:>5} {sign}{delta:>6}{marker}")
+        if delta > 0 and SEVERITY_ORDER[level] >= SEVERITY_ORDER[args.threshold]:
+            regressed.append(level)
+
+    if regressed:
+        print(f"\nFAIL: regressions at or above {args.threshold}: {', '.join(regressed)}")
+        return 1
+    print(f"\nOK: no regressions at or above {args.threshold}.")
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     db = FindingsDB(args.db)
     try:
@@ -131,6 +161,20 @@ def main() -> int:
     p_diff.add_argument("old_id", type=int)
     p_diff.add_argument("new_id", type=int)
     p_diff.set_defaults(func=cmd_diff)
+
+    p_sev = sub.add_parser(
+        "severity-delta",
+        help="Compare severity counts; exit non-zero on regressions at threshold",
+    )
+    p_sev.add_argument("old_id", type=int)
+    p_sev.add_argument("new_id", type=int)
+    p_sev.add_argument(
+        "--threshold",
+        choices=list(SEVERITY_ORDER),
+        default="CRITICAL",
+        help="Minimum severity that causes a non-zero exit (default: %(default)s)",
+    )
+    p_sev.set_defaults(func=cmd_severity_delta)
 
     args = parser.parse_args()
     return args.func(args)

@@ -50,6 +50,37 @@ from pathlib import Path
 from typing import Any
 
 
+SEVERITY_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
+
+def collect_severities(result_json: str) -> list[str]:
+    """Walk a tool result JSON and collect every severity-like value.
+
+    Tools use several shapes (model_files[].risk, behavioral_risks[].severity,
+    risk_level, etc.) so we walk the structure and pluck any string value
+    equal to one of our known severity names. Heuristic but honest.
+    """
+    try:
+        obj = json.loads(result_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    found: list[str] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+        elif isinstance(node, str) and node in SEVERITY_ORDER:
+            found.append(node)
+
+    walk(obj)
+    return found
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audits (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +196,14 @@ class FindingsDB:
             (audit_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def severity_counts(self, audit_id: int) -> dict[str, int]:
+        """Count every severity mention across all tool invocations for an audit."""
+        counts = {k: 0 for k in SEVERITY_ORDER}
+        for inv in self.get_invocations(audit_id):
+            for sev in collect_severities(inv["result_json"]):
+                counts[sev] += 1
+        return counts
 
     # ---------------------------------------------------------------
     # Diff

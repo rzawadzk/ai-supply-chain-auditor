@@ -37,41 +37,8 @@ import os
 import sys
 from pathlib import Path
 
-from findings_db import FindingsDB
+from findings_db import FindingsDB, SEVERITY_ORDER
 from tools import TOOL_RUNNERS
-
-
-SEVERITY_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
-
-
-def _collect_severities(result_json: str) -> list[str]:
-    """Walk a tool result and collect every severity-like value.
-
-    Tools use several shapes — model_files[].risk, behavioral_risks[].severity,
-    risk_level, etc. Rather than teach this script each shape, we walk the
-    structure and pluck any value that is one of our known severity strings.
-    This is heuristic but honest: it matches what the LLM is doing when it
-    reads the same JSON.
-    """
-    try:
-        obj = json.loads(result_json)
-    except json.JSONDecodeError:
-        return []
-
-    found: list[str] = []
-
-    def walk(node):
-        if isinstance(node, dict):
-            for v in node.values():
-                walk(v)
-        elif isinstance(node, list):
-            for v in node:
-                walk(v)
-        elif isinstance(node, str) and node in SEVERITY_ORDER:
-            found.append(node)
-
-    walk(obj)
-    return found
 
 
 def _run_and_log(db: FindingsDB, audit_id: int, tool: str, args: dict, verbose: bool) -> dict:
@@ -130,12 +97,7 @@ def scan(
     )
 
     # --- 5. Severity tally across every invocation in this audit.
-    counts = {k: 0 for k in SEVERITY_ORDER}
-    for inv in db.get_invocations(audit_id):
-        for sev in _collect_severities(inv["result_json"]):
-            counts[sev] += 1
-
-    return audit_id, counts
+    return audit_id, db.severity_counts(audit_id)
 
 
 def main() -> int:
