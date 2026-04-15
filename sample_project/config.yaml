@@ -1,0 +1,16 @@
+model:
+  name: sentiment-analysis-v2
+  source: https://huggingface.co/unknown-user/sentiment-analysis-v2
+  type: transformer
+
+api:
+  openai_endpoint: https://api.openai.com/v1/chat/completions
+  anthropic_endpoint: https://api.anthropic.com/v1/messages
+
+data:
+  training_set: custom-sentiment-dataset
+  source: https://example.com/datasets/
+
+deployment:
+  environment: production
+  gpu: true

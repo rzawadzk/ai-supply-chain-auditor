@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ai-supply-chain-auditor": {
+      "command": "/Users/rzawadzk/.pyenv/shims/python",
+      "args": [
+        "/Users/rzawadzk/Agentic/ai-supply-chain-auditor/mcp_server.py"
+      ]
+    }
+  }
+}

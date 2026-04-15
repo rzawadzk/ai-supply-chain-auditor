@@ -1,0 +1,8 @@
+transformers>=4.30.0
+torch
+openai
+langchain
+safetensors==0.4.0
+datasets
+scikit-learn
+requests
