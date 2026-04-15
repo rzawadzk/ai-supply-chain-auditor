@@ -21,12 +21,15 @@ I am learning agentic AI. When helping with this project:
 ## Architecture
 
 ```
-main.py              → CLI entry point (--backend, --db flags)
+main.py              → CLI entry point for the AGENTIC audit (--backend, --db flags)
+scan.py              → CLI entry point for the DETERMINISTIC scan (no LLM, for CI)
 agent.py             → Dispatcher (picks adapter, optionally wraps runners with DB logging)
 mcp_server.py        → STANDALONE MCP server (exposes 5 tools to any CC session)
 .mcp.json            → Claude Code config to register the standalone server
 findings_db.py       → SQLite persistence for audit history + tool invocations
 findings_cli.py      → CLI: list / show / diff recorded audits
+.github/workflows/
+    audit.yml        → GitHub Actions: runs scan.py on PRs, diffs, gates on CRITICAL
 adapters/            → Model-agnostic layer
     base.py          → AgentAdapter Protocol + SYSTEM_PROMPT (shared across backends)
     claude_sdk.py    → Claude Agent SDK adapter (default, uses CC login)
@@ -80,18 +83,24 @@ Principle: "structured artifacts are diffable; prose is not." If you
 want finding-level diffs, extract them from the stored JSON at query
 time — don't try to normalize LLM prose.
 
-## Two ways to use this auditor
+## Three ways to use this auditor
 
-1. **CLI mode** (`python main.py`): runs the built-in agentic loop. Self-contained
-   — one model does inventory → investigate → report. Good for scheduled audits
-   and CI/CD.
+1. **Agentic mode** (`python main.py`): runs the built-in LLM loop. One model
+   does inventory → investigate → prose report. Good for investigation and
+   ad-hoc deep dives.
 2. **MCP mode** (`.mcp.json` + `mcp_server.py`): exposes the 5 raw tools to any
    Claude Code session. The calling session becomes the strategy layer. Good for
-   ad-hoc, interactive audits where you want the caller's context (codebase
-   familiarity, prior conversation) in the loop.
+   interactive audits where you want the caller's context in the loop.
+3. **Deterministic mode** (`python scan.py`): runs every tool in a hardcoded
+   order, writes structured JSON to the findings DB, exits non-zero on gated
+   severity. No LLM, no API key, no non-determinism. Good for CI and pre-commit.
 
 Design rule: the standalone MCP server exposes PRIMITIVES, not a meta-`run_audit`
 tool. Tools stay deterministic; strategy stays in the calling agent.
+
+Design rule: **agents for judgment, code for assertions.** The agentic mode
+writes prose; the deterministic mode returns structured data you can grep
+and gate on. Both use the same tools underneath.
 
 ## Conventions
 - **Model**: Claude Opus 4.6 (`claude-opus-4-6`) with adaptive thinking

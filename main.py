@@ -17,8 +17,11 @@ Backends:
 
 Env vars:
     AUDITOR_BACKEND  Default backend if --backend is not passed.
+    AUDITOR_DB       Default DB path for --db.
     OPENAI_MODEL     Override the model for any OpenAI-compatible backend.
     OPENAI_BASE_URL  Point any OpenAI-compatible backend at a custom endpoint.
+
+For CI/pre-commit (no LLM, deterministic, with severity gate), see scan.py.
 """
 
 import argparse

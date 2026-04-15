@@ -157,21 +157,33 @@ stored: the LLM's prose report — it's non-deterministic and unsafe to
 diff. The CLI compares tool outputs by hash and summarizes structural
 changes (added/removed findings, list length deltas).
 
-### 3. Direct Python (no LLM)
+### 3. Deterministic scan (no LLM — built for CI)
 
-Deterministic, fast, no API cost. Good for pre-commit hooks and CI gates.
+Runs every tool in a hardcoded order, writes structured JSON to the findings
+DB, exits non-zero when a severity threshold is hit. No LLM, no API key, no
+non-determinism.
+
+```bash
+# One-off scan
+python scan.py /path/to/project
+
+# CI-style: gate on CRITICAL, persist to DB
+python scan.py /path/to/project --db audit.db --fail-on CRITICAL
+echo $?   # 0 = passed, 1 = CRITICAL found
+```
+
+A ready-to-use GitHub Actions workflow is in `.github/workflows/audit.yml`.
+It scans the PR branch vs its base, posts a sticky diff comment, and fails
+the check on any CRITICAL finding — all without an API key.
+
+You can also invoke the underlying tools directly for custom pipelines:
 
 ```python
 from tools.inventory import run_inventory
-from tools.integrity import run_integrity
 import json
-
 inv = json.loads(run_inventory({"project_path": "./my-repo"}))
 for mf in inv["model_files"]:
     print(f"{mf['path']}: {mf['risk']}")
-    check = json.loads(run_integrity({"file_path": mf["path"]}))
-    if check.get("dangerous_opcodes"):
-        print(f"  BLOCKED: {check['dangerous_opcodes']}")
 ```
 
 ---
@@ -258,9 +270,9 @@ PRs welcome. Things worth adding:
 
 - SARIF output for GitHub code scanning
 - Integration with SBOM formats (CycloneDX, SPDX)
-- CI workflow that fails on CRITICAL findings
 - More language support (Rust, Go, Java ML frameworks)
 - Richer diffs in `findings_cli.py` (e.g., which specific finding appeared)
+- Capability benchmark: run all backends against `sample_project/` and report which models can actually complete the audit
 
 If you're learning agentic AI patterns while reading this code, start with [`CLAUDE.md`](CLAUDE.md) — it's written as a teaching artifact.
 
