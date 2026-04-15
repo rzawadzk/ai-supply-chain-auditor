@@ -1,0 +1,123 @@
+name: AI Supply Chain Audit
+
+# Runs the deterministic scan (no LLM) on every PR and push to main.
+# On PRs: scans the base branch, scans the PR branch, diffs them, posts
+# a sticky comment, and fails the check if any CRITICAL finding is
+# present on the PR side.
+#
+# Design notes:
+#   - Uses scan.py (not main.py) because CI needs determinism and no API keys.
+#   - Each branch is scanned exactly once. The gate is deferred via
+#     continue-on-error so the comment posts even when the PR has CRITICALs.
+#   - Comment uses upsert semantics so repeated pushes edit one comment
+#     rather than flooding the PR.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write  # needed for the sticky comment step
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo (with history for base comparison)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        # scan.py only needs stdlib, but the full install lets the same
+        # workflow be extended to the agentic audit later.
+        run: pip install -r requirements.txt
+
+      # ---------------------------------------------------------------
+      # PR MODE — scan base, then PR, diff, comment, gate.
+      # ---------------------------------------------------------------
+
+      - name: Scan base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}"
+          git checkout "origin/${{ github.base_ref }}"
+          python scan.py . --db audit.db | tee base.log
+
+      - name: Scan PR branch (gate deferred)
+        if: github.event_name == 'pull_request'
+        id: pr_scan
+        continue-on-error: true
+        run: |
+          git checkout "${{ github.sha }}"
+          python scan.py . --db audit.db --fail-on CRITICAL | tee pr.log
+
+      - name: Build diff report
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "## AI Supply Chain Audit — PR vs \`${{ github.base_ref }}\`"
+            echo ""
+            echo "### Severity counts on PR branch"
+            echo '```'
+            grep -E '^\s+(CRITICAL|HIGH|MEDIUM|LOW):' pr.log || true
+            echo '```'
+            echo ""
+            echo "### Changes vs base"
+            echo '```'
+            python findings_cli.py --db audit.db diff 1 2
+            echo '```'
+            echo ""
+            if [ "${{ steps.pr_scan.outcome }}" = "failure" ]; then
+              echo "> **CRITICAL findings present on this PR.** The gate failed — "
+              echo "> this check will block merge until addressed."
+            else
+              echo "> No CRITICAL findings on this PR."
+            fi
+            echo ""
+            echo "_Deterministic scan — no LLM. See [\`scan.py\`](scan.py)._"
+          } > diff.md
+          cat diff.md
+
+      - name: Upsert PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ai-supply-chain-audit
+          path: diff.md
+
+      - name: Enforce gate
+        if: github.event_name == 'pull_request' && steps.pr_scan.outcome == 'failure'
+        run: |
+          echo "PR introduces or retains CRITICAL findings. Failing the check."
+          exit 1
+
+      # ---------------------------------------------------------------
+      # PUSH-TO-MAIN MODE — scan and store for history.
+      # ---------------------------------------------------------------
+
+      - name: Scan main on push
+        if: github.event_name == 'push'
+        run: python scan.py . --db audit.db --fail-on CRITICAL
+
+      # ---------------------------------------------------------------
+      # Always upload the DB so you can download it and inspect with
+      # findings_cli.py locally. 30-day retention keeps history searchable.
+      # ---------------------------------------------------------------
+
+      - name: Upload audit DB as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-db-${{ github.run_id }}
+          path: audit.db
+          if-no-files-found: ignore
+          retention-days: 30
